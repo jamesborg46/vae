@@ -9,8 +9,12 @@ from torchvision import transforms
 import datetime
 import argparse
 
+import logging
+
 import wandb
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class Encoder(nn.Module):
 
@@ -65,7 +69,7 @@ class BenroulliDecoder(nn.Module):
 
 class VAE(nn.Module):
     def __init__(self,
-                 enoder_units=500,
+                 encoder_units=500,
                  decoder_units=500,
                  latent_dim=32,
                  sigmoidal_mean=False):
@@ -75,6 +79,11 @@ class VAE(nn.Module):
         self.decoder = GaussianDecoder(z_dim=latent_dim,
                                        units=decoder_units,
                                        sigmoidal_mean=sigmoidal_mean)
+        self.cumulative_losses = {
+            "total_loss": 0,
+            "kl_loss": 0,
+            "reconstruction_loss": 0,
+        }
 
     def forward(self, x, num_samples=1):
         batch_size = x.shape[0]
@@ -89,69 +98,67 @@ class VAE(nn.Module):
             -(1/num_samples) * torch.sum(reconstructed_x.log_prob(x))
         )
         self.loss = self.encoder.kl_loss + self.reconstruction_loss
+        self.accumulate_losses()
         reconstructed_x = torch.reshape(reconstructed_x.sample(),
                                         (num_samples, batch_size, 1, 28, 28))
 
         return reconstructed_x
 
+    def accumulate_losses(self):
+        self.cumulative_losses['total_loss'] += self.loss
+        self.cumulative_losses['kl_loss'] += self.encoder.kl_loss
+        self.cumulative_losses['reconstruction_loss'] += self.reconstruction_loss
+
+    def get_cumulative_losses(self, size=60000):
+        mode = "training_" if self.training else "testing_"
+        losses = {
+            mode + key: value / size
+            for key, value in self.cumulative_losses.items()
+        }
+
+        self.cumulative_losses = {
+            "total_loss": 0,
+            "kl_loss": 0,
+            "reconstruction_loss": 0,
+        }
+
+        return losses
+
 
 def train(model, device, train_loader, optimizer, epoch):
     model.train()
+    num_training_steps = 0
 
     for batch_idx, (data, target) in enumerate(train_loader):
+        batch_size = len(data)
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         model(data)
-        loss = (1/128) * model.loss
+        loss = (1/batch_size) * model.loss
         loss.backward()
         optimizer.step()
 
-        if batch_idx % 200 == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_idx * len(data), len(train_loader.dataset),
-                    100. * batch_idx / len(train_loader), loss.item()))
+        num_training_steps += batch_size
 
-            wandb.log({
-                "training loss": model.loss,
-                "training kl loss": model.encoder.kl_loss / 128,
-                "training reconstruction loss": model.reconstruction_loss / 128
-            })
+        if batch_idx % 200 == 0:
+            logger.info('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                        epoch, batch_idx * batch_size, len(train_loader.dataset),
+                        100. * batch_idx / len(train_loader), loss.item()))
+
+    return model.get_cumulative_losses()
 
 
 def test(model, device, test_loader, epoch):
     model.eval()
     test_loss = 0
-    kl_loss = 0
-    reconstruction_loss = 0
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
             model(data)
-            test_loss += ((1/10000) * model.loss).item()  # sum up batch loss
-            kl_loss += ((1/10000) * model.encoder.kl_loss).item()
-            reconstruction_loss += (
-                (1/10000) * model.reconstruction_loss).item()
+            test_loss += ((1/len(test_loader.dataset)) * model.loss).item()  # sum up batch loss
 
-    wandb.log({
-        "test loss": test_loss,
-        "test kl loss": kl_loss,
-        "test reconstruction loss": reconstruction_loss
-    })
-
-    if epoch % 10 == 0:
-        z = torch.distributions.Normal(
-            loc=torch.zeros((5, 32,)),
-            scale=torch.ones((5, 32,))
-        )
-        z_params = model.decoder(z.sample().to(device))
-        samples = torch.reshape(
-            torch.distributions.Normal(*z_params).sample(),
-            (5, 28, 28)
-        ).cpu().numpy()
-
-        wandb.log({"examples": [wandb.Image(i) for i in samples]})
-
-    print('\nTest set: Average loss: {:.4f}\n'.format(test_loss))
+    logger.info('Test set: Average loss: {:.4f}\n'.format(test_loss))
+    return model.get_cumulative_losses(size=10000)
 
 
 def main():
@@ -174,7 +181,10 @@ def main():
 
     args = parser.parse_args()
 
-    exp_name = datetime.datetime.now('%Y-%m-%d-%H:%M:%S') + '_' + args.name
+    logger.info(args)
+
+    exp_name = (datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
+                + '_' + args.name)
 
     wandb.init(
         name=exp_name,
@@ -212,7 +222,10 @@ def main():
         num_workers=8,
     )
 
-    model = VAE(enoder_units=args.enoder_units,
+    logger.info("Training set size: {}".format(len(train_loader.dataset)))
+    logger.info("Test set size: {}".format(len(test_loader.dataset)))
+
+    model = VAE(encoder_units=args.encoder_units,
                 decoder_units=args.decoder_units,
                 latent_dim=args.latent_dim,
                 sigmoidal_mean=args.sigmoidal_mean).to(device)
@@ -228,13 +241,38 @@ def main():
     def weights_init(m):
         if isinstance(m, nn.Linear):
             init.normal_(m.weight, 0.0, args.weight_init_std)
-            init.normal_(m.bias, 0.0, args.bias_init_std)
+            if args.bias_init_std == 0.0:
+                init.zeros_(m.bias)
+            else:
+                init.normal_(m.bias, 0.0, args.bias_init_std)
 
     model.apply(weights_init)
 
     for epoch in range(args.epochs):
-        train(model, device, train_loader, optimizer, epoch)
-        test(model, device, test_loader, epoch)
+        train_losses = train(model, device, train_loader, optimizer, epoch)
+        test_losses = test(model, device, test_loader, epoch)
+
+        with torch.no_grad():
+            z = torch.distributions.Normal(
+                loc=torch.zeros((5, 32,)),
+                scale=torch.ones((5, 32,))
+            )
+
+            x_params = model.decoder(z.sample().to(device))
+            x_mean, x_std = x_params
+            samples = torch.reshape(
+                torch.distributions.Normal(*x_params).sample(),
+                (5, 28, 28)
+            ).cpu().numpy()
+
+            wandb.log(
+                {**train_losses,
+                 **test_losses,
+                 "examples": [wandb.Image(i) for i in samples],
+                 "output_mean": wandb.Histogram(x_mean.cpu().numpy()),
+                 "output_std": wandb.Histogram(x_std.cpu().numpy()),
+                 "epoch": epoch+1
+                 })
 
 
 if __name__ == '__main__':
