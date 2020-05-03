@@ -1,5 +1,5 @@
 python ./vae.py \
-    --name EXP_1 \
+    --name EXP_2_PRE_NORMALIZATION \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 500 \
@@ -10,4 +10,5 @@ python ./vae.py \
     --latent-dim 32 \
     --weight-init-std 0.01 \
     --bias-init-std 0.0 \
-    --sigmoidal-mean
+    --pre-normalization
+
