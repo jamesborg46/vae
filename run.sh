@@ -1,5 +1,5 @@
 python ./vae.py \
-    --name EXP_2_PRE_NORMALIZATION \
+    --name EXP_3_PRE_NORMALIZATION_DEFAULT_INITS \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 500 \

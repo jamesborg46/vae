@@ -8,6 +8,7 @@ from torchvision import transforms
 
 import datetime
 import argparse
+import math
 
 import logging
 
@@ -16,14 +17,16 @@ import wandb
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class Encoder(nn.Module):
 
-    def __init__(self, units=500, z_dim=32):
+    def __init__(self, units=500, z_dim=32, prior_std=1):
         super(Encoder, self).__init__()
 
         self.dense = nn.Linear(28*28, units)
         self.mean = nn.Linear(units, z_dim)
         self.log_var = nn.Linear(units, z_dim)
+        self.prior_std = prior_std
 
     def forward(self, x):
         x = torch.tanh(self.dense(x))
@@ -32,7 +35,12 @@ class Encoder(nn.Module):
         var = torch.exp(log_var)
         std = torch.sqrt(var)
 
-        self.kl_loss = -(0.5 * torch.sum(1 + log_var - mean**2 - var))
+        self.kl_loss = -0.5 * (torch.sum(
+            1 + log_var -
+            (mean**2 + var) / self.prior_std**2 -
+            math.log(self.prior_std**2)
+        ))
+
         return mean, std
 
 
@@ -172,6 +180,7 @@ def main():
     parser.add_argument('--decoder-units', type=int, default=500)
     parser.add_argument('--decoder-weight-decay', type=float, default=0.1)
     parser.add_argument('--latent-dim', type=int, default=32)
+    parser.add_argument('--custom-init', action='store_true', default=False)
     parser.add_argument('--weight-init-std', type=float, default=0.01)
     parser.add_argument('--bias-init-std', type=float, default=0.0)
     parser.add_argument('--pre-normalization',
@@ -246,7 +255,8 @@ def main():
             else:
                 init.normal_(m.bias, 0.0, args.bias_init_std)
 
-    model.apply(weights_init)
+    if args.custom_init:
+        model.apply(weights_init)
 
     for epoch in range(args.epochs):
         train_losses = train(model, device, train_loader, optimizer, epoch)
