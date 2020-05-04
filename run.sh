@@ -1,5 +1,5 @@
 python ./vae.py \
-    --name EXP_5_WTIH_VISUALS \
+    --name EXP_6_NO_NORM_SIGM_WTIH_VISUALS \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 500 \
@@ -11,5 +11,5 @@ python ./vae.py \
     --weight-init-std 0.01 \
     --bias-init-std 0.0 \
     --z-std-prior 0.1 \
-    --pre-normalization
+    --sigmoidal-mean
 
