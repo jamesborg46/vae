@@ -1,5 +1,5 @@
 python ./vae.py \
-    --name EXP_7_SMALL_LR_NO_NORM_SIGM_WTIH_VISUALS \
+    --name EXP_7_MEDIUM_LR_NO_NORM_SIGM_WTIH_VISUALS \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 500 \
