@@ -294,6 +294,11 @@ def main():
                 train_input_samples.to(device)
             )[0]
 
+            # logger.info("INPUT")
+            # logger.info(train_input_samples[0])
+            # logger.info("OUTPUT")
+            # logger.info(reconstructed_train_samples[0])
+
             test_input_samples, _ = visualizer_test.next()
             reconstructed_test_samples = model(
                 test_input_samples.to(device)
@@ -317,7 +322,9 @@ def main():
                  "input_train_samples":
                     [wandb.Image(i) for i in train_input_samples],
                  "reconstructed_train_samples":
-                    [wandb.Image(i) for i in reconstructed_train_samples],
+                    [wandb.Image(i) for i in torch.clamp(reconstructed_train_samples,
+                                                         -0.4242,
+                                                         2.7960)],
                  "input_test_samples":
                     [wandb.Image(i) for i in test_input_samples],
                  "reconstructed_test_samples":
