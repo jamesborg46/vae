@@ -20,13 +20,13 @@ logger = logging.getLogger(__name__)
 
 class Encoder(nn.Module):
 
-    def __init__(self, units=500, z_dim=32, prior_std=1):
+    def __init__(self, units=500, z_dim=32, z_std_prior=1.):
         super(Encoder, self).__init__()
 
         self.dense = nn.Linear(28*28, units)
         self.mean = nn.Linear(units, z_dim)
         self.log_var = nn.Linear(units, z_dim)
-        self.prior_std = prior_std
+        self.z_std_prior = z_std_prior
 
     def forward(self, x):
         x = torch.tanh(self.dense(x))
@@ -37,8 +37,8 @@ class Encoder(nn.Module):
 
         self.kl_loss = -0.5 * (torch.sum(
             1 + log_var -
-            (mean**2 + var) / self.prior_std**2 -
-            math.log(self.prior_std**2)
+            (mean**2 + var) / self.z_std_prior**2 -
+            math.log(self.z_std_prior**2)
         ))
 
         return mean, std
@@ -80,10 +80,13 @@ class VAE(nn.Module):
                  encoder_units=500,
                  decoder_units=500,
                  latent_dim=32,
+                 z_std_prior=1.,
                  sigmoidal_mean=False):
 
         super(VAE, self).__init__()
-        self.encoder = Encoder(units=encoder_units, z_dim=latent_dim)
+        self.encoder = Encoder(units=encoder_units,
+                               z_dim=latent_dim,
+                               z_std_prior=z_std_prior)
         self.decoder = GaussianDecoder(z_dim=latent_dim,
                                        units=decoder_units,
                                        sigmoidal_mean=sigmoidal_mean)
@@ -183,6 +186,7 @@ def main():
     parser.add_argument('--custom-init', action='store_true', default=False)
     parser.add_argument('--weight-init-std', type=float, default=0.01)
     parser.add_argument('--bias-init-std', type=float, default=0.0)
+    parser.add_argument('--z-std-prior', type=float, default=1.0)
     parser.add_argument('--pre-normalization',
                         action='store_true', default=False)
     parser.add_argument('--sigmoidal-mean',
@@ -237,6 +241,7 @@ def main():
     model = VAE(encoder_units=args.encoder_units,
                 decoder_units=args.decoder_units,
                 latent_dim=args.latent_dim,
+                z_std_prior=args.z_std_prior,
                 sigmoidal_mean=args.sigmoidal_mean).to(device)
 
     optimizer = optim.Adagrad([
@@ -265,7 +270,7 @@ def main():
         with torch.no_grad():
             z = torch.distributions.Normal(
                 loc=torch.zeros((5, 32,)),
-                scale=torch.ones((5, 32,))
+                scale=args.z_std_prior*torch.ones((5, 32,))
             )
 
             x_params = model.decoder(z.sample().to(device))
