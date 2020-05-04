@@ -256,6 +256,9 @@ def main():
     logger.info("Training set size: {}".format(len(train_loader.dataset)))
     logger.info("Test set size: {}".format(len(test_loader.dataset)))
 
+    if args.sigmoidal_mean:
+        logger.info("SIGMOIDAL_MEAN")
+
     model = VAE(encoder_units=args.encoder_units,
                 decoder_units=args.decoder_units,
                 latent_dim=args.latent_dim,
@@ -303,6 +306,7 @@ def main():
 
             x_params = model.decoder(z.sample().to(device))
             x_mean, x_std = x_params
+            logger.warning(torch.min(x_mean).cpu().item())
             generated_samples = torch.reshape(
                 torch.distributions.Normal(*x_params).sample(),
                 (5, 28, 28)
