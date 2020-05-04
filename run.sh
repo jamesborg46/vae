@@ -1,12 +1,12 @@
 python ./vae.py \
-    --name EXP_16 \
+    --name EXP_17 \
     --batch-size 100 \
     --test-batch-size 1000 \
     --epochs 500 \
     --lr 0.01 \
     --encoder-units 500 \
     --decoder-units 500 \
-    --decoder-weight-decay 0.1 \
+    --decoder-weight-decay 0.0 \
     --latent-dim 16 \
     --custom-init \
     --weight-init-std 0.01 \
