@@ -145,7 +145,7 @@ def train(model, device, train_loader, optimizer, epoch):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         model(data)
-        loss = (1/batch_size) * model.loss
+        loss = (len(train_loader.dataset)/batch_size) * model.loss
         loss.backward()
         optimizer.step()
 
