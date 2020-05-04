@@ -306,7 +306,6 @@ def main():
 
             x_params = model.decoder(z.sample().to(device))
             x_mean, x_std = x_params
-            logger.warning(torch.min(x_mean).cpu().item())
             generated_samples = torch.reshape(
                 torch.distributions.Normal(*x_params).sample(),
                 (5, 28, 28)
