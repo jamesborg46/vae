@@ -235,14 +235,23 @@ def main():
         num_workers=8,
     )
 
-    visualizer_loader = torch.utils.data.DataLoader(
+    visualizer_test_loader = torch.utils.data.DataLoader(
         validation_data,
         batch_size=5,
         shuffle=True,
         num_workers=1,
     )
 
-    visualizer = iter(visualizer_loader)
+    visualizer_test = iter(visualizer_test_loader)
+
+    visualizer_train_loader = torch.utils.data.DataLoader(
+        validation_data,
+        batch_size=5,
+        shuffle=True,
+        num_workers=1,
+    )
+
+    visualizer_train = iter(visualizer_train_loader)
 
     logger.info("Training set size: {}".format(len(train_loader.dataset)))
     logger.info("Test set size: {}".format(len(test_loader.dataset)))
@@ -277,8 +286,15 @@ def main():
         test_losses = test(model, device, test_loader, epoch)
 
         with torch.no_grad():
-            input_samples, target = visualizer.next()
-            reconstructed_samples = model(input_samples.to(device))[0]
+            train_input_samples, _ = visualizer_train.next()
+            reconstructed_train_samples = model(
+                train_input_samples.to(device)
+            )[0]
+
+            test_input_samples, _ = visualizer_test.next()
+            reconstructed_test_samples = model(
+                test_input_samples.to(device)
+            )[0]
 
             z = torch.distributions.Normal(
                 loc=torch.zeros((5, args.latent_dim,)),
@@ -295,10 +311,14 @@ def main():
             wandb.log(
                 {**train_losses,
                  **test_losses,
-                 "input_samples":
-                    [wandb.Image(i) for i in input_samples],
-                 "reconstructed_samples":
-                    [wandb.Image(i) for i in reconstructed_samples],
+                 "input_train_samples":
+                    [wandb.Image(i) for i in train_input_samples],
+                 "reconstructed_train_samples":
+                    [wandb.Image(i) for i in reconstructed_train_samples],
+                 "input_test_samples":
+                    [wandb.Image(i) for i in test_input_samples],
+                 "reconstructed_test_samples":
+                    [wandb.Image(i) for i in reconstructed_test_samples],
                  "generated_samples":
                     [wandb.Image(i) for i in generated_samples],
                  "output_mean": wandb.Histogram(x_mean.cpu().numpy()),
