@@ -165,7 +165,7 @@ def test(model, device, test_loader, epoch):
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            model(data)
+            reconstructed_x = model(data)
             test_loss += ((1/len(test_loader.dataset)) * model.loss).item()  # sum up batch loss
 
     logger.info('Test set: Average loss: {:.4f}\n'.format(test_loss))
@@ -235,6 +235,15 @@ def main():
         num_workers=8,
     )
 
+    visualizer_loader = torch.utils.data.DataLoader(
+        validation_data,
+        batch_size=5,
+        shuffle=True,
+        num_workers=1,
+    )
+
+    visualizer = iter(visualizer_loader)
+
     logger.info("Training set size: {}".format(len(train_loader.dataset)))
     logger.info("Test set size: {}".format(len(test_loader.dataset)))
 
@@ -268,6 +277,9 @@ def main():
         test_losses = test(model, device, test_loader, epoch)
 
         with torch.no_grad():
+            input_samples, target = visualizer.next()
+            reconstructed_samples = model(input_samples.to(device))[0]
+
             z = torch.distributions.Normal(
                 loc=torch.zeros((5, 32,)),
                 scale=args.z_std_prior*torch.ones((5, 32,))
@@ -275,7 +287,7 @@ def main():
 
             x_params = model.decoder(z.sample().to(device))
             x_mean, x_std = x_params
-            samples = torch.reshape(
+            generated_samples = torch.reshape(
                 torch.distributions.Normal(*x_params).sample(),
                 (5, 28, 28)
             ).cpu().numpy()
@@ -283,7 +295,12 @@ def main():
             wandb.log(
                 {**train_losses,
                  **test_losses,
-                 "examples": [wandb.Image(i) for i in samples],
+                 "input_samples":
+                    [wandb.Image(i) for i in input_samples],
+                 "reconstructed_samples":
+                    [wandb.Image(i) for i in reconstructed_samples],
+                 "generated_samples":
+                    [wandb.Image(i) for i in generated_samples],
                  "output_mean": wandb.Histogram(x_mean.cpu().numpy()),
                  "output_std": wandb.Histogram(x_std.cpu().numpy()),
                  "epoch": epoch+1

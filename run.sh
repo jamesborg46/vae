@@ -1,5 +1,5 @@
 python ./vae.py \
-    --name EXP_4_FIXED_GENERATION_SMALLER_PRIOR \
+    --name EXP_5_WTIH_VISUALS \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 500 \
