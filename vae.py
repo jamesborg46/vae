@@ -30,7 +30,7 @@ class Encoder(nn.Module):
         self.z_std_prior = z_std_prior
 
     def forward(self, x):
-        x = torch.tanh(self.dense(x))
+        x = torch.relu(self.dense(x))
         mean = self.mean(x)
         log_var = self.log_var(x)
         var = torch.exp(log_var)
@@ -54,7 +54,7 @@ class GaussianDecoder(nn.Module):
         self.sigmoidal_mean = sigmoidal_mean
 
     def forward(self, z):
-        z = torch.tanh(self.dense(z))
+        z = torch.relu(self.dense(z))
         mean = self.mean(z)
         if self.sigmoidal_mean:
             mean = torch.sigmoid(mean)
@@ -114,7 +114,7 @@ class VAE(nn.Module):
         #     -(1/num_samples) * torch.sum(reconstructed_x.log_prob(x))
         # )
         self.reconstruction_loss = (
-            -(1/num_samples) * F.binary_cross_entropy(reconstructed_x, x, reduction='sum')
+            (1/num_samples) * F.binary_cross_entropy(reconstructed_x, x, reduction='sum')
         )
         self.loss = self.encoder.kl_loss + self.reconstruction_loss
         self.accumulate_losses()
@@ -346,7 +346,7 @@ def main():
                     [wandb.Image(i) for i in generated_samples],
                  # "output_mean": wandb.Histogram(x_mean.cpu().numpy()),
                  # "output_std": wandb.Histogram(x_std.cpu().numpy()),
-                 "output": wandb.Histogram(x.cpu().numpy())
+                 "output": wandb.Histogram(x.cpu().numpy()),
                  "epoch": epoch+1
                  })
 
