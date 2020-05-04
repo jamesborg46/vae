@@ -1,15 +1,15 @@
 python ./vae.py \
-    --name EXP_7_MEDIUM_LR_NO_NORM_SIGM_WTIH_VISUALS \
+    --name EXP_9 \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 500 \
-    --lr 0.00001 \
+    --lr 0.003 \
     --encoder-units 500 \
     --decoder-units 500 \
-    --decoder-weight-decay 0.5 \
-    --latent-dim 32 \
-    --weight-init-std 0.01 \
+    --decoder-weight-decay 0.1 \
+    --latent-dim 8 \
+    --weight-init-std 0.1 \
     --bias-init-std 0.0 \
-    --z-std-prior 0.1 \
+    --z-std-prior 1 \
     --sigmoidal-mean
 

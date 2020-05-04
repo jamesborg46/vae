@@ -281,8 +281,8 @@ def main():
             reconstructed_samples = model(input_samples.to(device))[0]
 
             z = torch.distributions.Normal(
-                loc=torch.zeros((5, 32,)),
-                scale=args.z_std_prior*torch.ones((5, 32,))
+                loc=torch.zeros((5, args.latent_dim,)),
+                scale=args.z_std_prior*torch.ones((5, args.latent_dim,))
             )
 
             x_params = model.decoder(z.sample().to(device))
