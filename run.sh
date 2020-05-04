@@ -1,5 +1,5 @@
 python ./vae.py \
-    --name EXP_19 \
+    --name EXP_20 \
     --batch-size 100 \
     --test-batch-size 1000 \
     --epochs 500 \

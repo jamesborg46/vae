@@ -265,7 +265,7 @@ def main():
                 z_std_prior=args.z_std_prior,
                 sigmoidal_mean=args.sigmoidal_mean).to(device)
 
-    optimizer = optim.Adagrad([
+    optimizer = optim.Adam([
         {'params': model.encoder.parameters()},
         {'params': model.decoder.parameters(),
          'weight_decay': args.decoder_weight_decay}
