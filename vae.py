@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.nn import init
+import torch.nn.functional as F
 
 from torchvision import datasets
 from torchvision import transforms
@@ -63,9 +64,9 @@ class GaussianDecoder(nn.Module):
         return mean, std
 
 
-class BenroulliDecoder(nn.Module):
+class BernoulliDecoder(nn.Module):
     def __init__(self, z_dim=32, units=500):
-        super(BenroulliDecoder, self).__init__()
+        super(BernoulliDecoder, self).__init__()
         self.dense = nn.Linear(z_dim, units)
         self.out = nn.Linear(units, 28*28)
 
@@ -87,9 +88,11 @@ class VAE(nn.Module):
         self.encoder = Encoder(units=encoder_units,
                                z_dim=latent_dim,
                                z_std_prior=z_std_prior)
-        self.decoder = GaussianDecoder(z_dim=latent_dim,
-                                       units=decoder_units,
-                                       sigmoidal_mean=sigmoidal_mean)
+        # self.decoder = GaussianDecoder(z_dim=latent_dim,
+        #                                units=decoder_units,
+        #                                sigmoidal_mean=sigmoidal_mean)
+        self.decoder = BernoulliDecoder(z_dim=latent_dim,
+                                        units=decoder_units)
         self.cumulative_losses = {
             "total_loss": 0,
             "kl_loss": 0,
@@ -102,15 +105,22 @@ class VAE(nn.Module):
         z_params = self.encoder(x)
         z_samples = (torch.distributions
                           .Normal(*z_params)
-                          .rsample((num_samples,)))
-        x_params = self.decoder(z_samples)
-        reconstructed_x = torch.distributions.Normal(*x_params)
+                          # .rsample((num_samples,)))
+                          .rsample())
+        # x_params = self.decoder(z_samples)
+        reconstructed_x = self.decoder(z_samples)
+        # reconstructed_x = torch.distributions.Normal(*x_params)
+        # self.reconstruction_loss = (
+        #     -(1/num_samples) * torch.sum(reconstructed_x.log_prob(x))
+        # )
         self.reconstruction_loss = (
-            -(1/num_samples) * torch.sum(reconstructed_x.log_prob(x))
+            -(1/num_samples) * F.binary_cross_entropy(reconstructed_x, x, reduction='sum')
         )
         self.loss = self.encoder.kl_loss + self.reconstruction_loss
         self.accumulate_losses()
-        reconstructed_x = torch.reshape(reconstructed_x.sample(),
+        # reconstructed_x = torch.reshape(reconstructed_x.sample(),
+        #                                 (num_samples, batch_size, 1, 28, 28))
+        reconstructed_x = torch.reshape(reconstructed_x,
                                         (num_samples, batch_size, 1, 28, 28))
 
         return reconstructed_x
@@ -265,7 +275,7 @@ def main():
                 z_std_prior=args.z_std_prior,
                 sigmoidal_mean=args.sigmoidal_mean).to(device)
 
-    optimizer = optim.Adam([
+    optimizer = optim.Adagrad([
         {'params': model.encoder.parameters()},
         {'params': model.decoder.parameters(),
          'weight_decay': args.decoder_weight_decay}
@@ -309,12 +319,15 @@ def main():
                 scale=args.z_std_prior*torch.ones((5, args.latent_dim,))
             )
 
-            x_params = model.decoder(z.sample().to(device))
-            x_mean, x_std = x_params
-            generated_samples = torch.reshape(
-                torch.distributions.Normal(*x_params).sample(),
-                (5, 28, 28)
-            ).cpu().numpy()
+            # x_params = model.decoder(z.sample().to(device))
+            # x_mean, x_std = x_params
+            # generated_samples = torch.reshape(
+            #     torch.distributions.Normal(*x_params).sample(),
+            #     (5, 28, 28)
+            # ).cpu().numpy()
+
+            x = model.decoder(z.sample().to(device))
+            generated_samples = torch.reshape(x, (5,28,28)).cpu().numpy()
 
             wandb.log(
                 {**train_losses,
@@ -331,8 +344,9 @@ def main():
                     [wandb.Image(i) for i in reconstructed_test_samples],
                  "generated_samples":
                     [wandb.Image(i) for i in generated_samples],
-                 "output_mean": wandb.Histogram(x_mean.cpu().numpy()),
-                 "output_std": wandb.Histogram(x_std.cpu().numpy()),
+                 # "output_mean": wandb.Histogram(x_mean.cpu().numpy()),
+                 # "output_std": wandb.Histogram(x_std.cpu().numpy()),
+                 "output": wandb.Histogram(x.cpu().numpy())
                  "epoch": epoch+1
                  })
 
