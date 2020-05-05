@@ -30,7 +30,7 @@ class Encoder(nn.Module):
         self.z_std_prior = z_std_prior
 
     def forward(self, x):
-        x = torch.relu(self.dense(x))
+        x = torch.tanh(self.dense(x))
         mean = self.mean(x)
         log_var = self.log_var(x)
         var = torch.exp(log_var)
@@ -54,7 +54,7 @@ class GaussianDecoder(nn.Module):
         self.sigmoidal_mean = sigmoidal_mean
 
     def forward(self, z):
-        z = torch.relu(self.dense(z))
+        z = torch.tanh(self.dense(z))
         mean = self.mean(z)
         if self.sigmoidal_mean:
             mean = torch.sigmoid(mean)
@@ -82,17 +82,27 @@ class VAE(nn.Module):
                  decoder_units=500,
                  latent_dim=32,
                  z_std_prior=1.,
+                 decoder_type='bernoulli',
                  sigmoidal_mean=False):
 
         super(VAE, self).__init__()
         self.encoder = Encoder(units=encoder_units,
                                z_dim=latent_dim,
                                z_std_prior=z_std_prior)
-        # self.decoder = GaussianDecoder(z_dim=latent_dim,
-        #                                units=decoder_units,
-        #                                sigmoidal_mean=sigmoidal_mean)
-        self.decoder = BernoulliDecoder(z_dim=latent_dim,
-                                        units=decoder_units)
+
+        if decoder_type == 'bernoulli':
+            self.decoder = BernoulliDecoder(z_dim=latent_dim,
+                                            units=decoder_units)
+        elif decoder_type == 'gaussian':
+            self.decoder = GaussianDecoder(z_dim=latent_dim,
+                                           units=decoder_units,
+                                           sigmoidal_mean=sigmoidal_mean)
+        else:
+            raise ValueError('Must select decoder_type'
+                             'of bernoulli or gaussian')
+
+        self.decoder_type = decoder_type
+
         self.cumulative_losses = {
             "total_loss": 0,
             "kl_loss": 0,
@@ -101,29 +111,56 @@ class VAE(nn.Module):
 
     def forward(self, x, num_samples=1):
         batch_size = x.shape[0]
+
         x = torch.flatten(x, 1)
+
         z_params = self.encoder(x)
         z_samples = (torch.distributions
                           .Normal(*z_params)
-                          # .rsample((num_samples,)))
-                          .rsample())
-        # x_params = self.decoder(z_samples)
-        reconstructed_x = self.decoder(z_samples)
-        # reconstructed_x = torch.distributions.Normal(*x_params)
-        # self.reconstruction_loss = (
-        #     -(1/num_samples) * torch.sum(reconstructed_x.log_prob(x))
-        # )
-        self.reconstruction_loss = (
-            (1/num_samples) * F.binary_cross_entropy(reconstructed_x, x, reduction='sum')
+                          .rsample((num_samples,)))
+
+        reconstructed_x_params = self.decoder(z_samples)
+
+        self.reconstruction_loss = self.get_reconstruction_loss(
+            reconstructed_x_params,
+            x
         )
+
         self.loss = self.encoder.kl_loss + self.reconstruction_loss
+
         self.accumulate_losses()
-        # reconstructed_x = torch.reshape(reconstructed_x.sample(),
-        #                                 (num_samples, batch_size, 1, 28, 28))
-        reconstructed_x = torch.reshape(reconstructed_x,
-                                        (num_samples, batch_size, 1, 28, 28))
+
+        if self.decoder_type == 'bernoulli':
+            reconstructed_x = torch.reshape(
+                reconstructed_x_params,
+                (num_samples, batch_size, 1, 28, 28)
+            )
+        elif self.decoder_type == 'gaussian':
+            reconstructed_x = torch.reshape(
+                torch.distributions.Normal(**reconstructed_x_params).rsample(),
+                (num_samples, batch_size, 1, 28, 28)
+            )
 
         return reconstructed_x
+
+    def get_reconstruction_loss(self, reconstructed_x_params, target):
+        samples, batch_size, dim = reconstructed_x_params.shape
+
+        if self.decoder_type == 'bernoulli':
+            assert batch_size, dim == target.shape
+            target = target.repeat(samples, 1, 1)
+            reconstruction_loss = F.binary_cross_entropy(
+                reconstructed_x_params,
+                target,
+                reduction='sum'
+            )
+
+        elif self.decoder_type == 'gaussian':
+            mu, std = reconstructed_x_params
+            dist = torch.distributions.Normal(mu, std)
+            reconstruction_loss = -torch.sum(dist.log_prob(target))
+
+        return (1/samples) * reconstruction_loss
 
     def accumulate_losses(self):
         self.cumulative_losses['total_loss'] += self.loss
@@ -175,7 +212,7 @@ def test(model, device, test_loader, epoch):
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            reconstructed_x = model(data)
+            model(data)
             test_loss += ((1/len(test_loader.dataset)) * model.loss).item()  # sum up batch loss
 
     logger.info('Test set: Average loss: {:.4f}\n'.format(test_loss))
@@ -191,6 +228,7 @@ def main():
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--encoder-units', type=int, default=500)
     parser.add_argument('--decoder-units', type=int, default=500)
+    parser.add_argument('--decoder-type', type=str, default='bernoulli')
     parser.add_argument('--decoder-weight-decay', type=float, default=0.1)
     parser.add_argument('--latent-dim', type=int, default=32)
     parser.add_argument('--custom-init', action='store_true', default=False)
@@ -273,6 +311,7 @@ def main():
                 decoder_units=args.decoder_units,
                 latent_dim=args.latent_dim,
                 z_std_prior=args.z_std_prior,
+                decoder_type=args.decoder_type,
                 sigmoidal_mean=args.sigmoidal_mean).to(device)
 
     optimizer = optim.Adagrad([
@@ -304,11 +343,6 @@ def main():
                 train_input_samples.to(device)
             )[0]
 
-            # logger.info("INPUT")
-            # logger.info(train_input_samples[0])
-            # logger.info("OUTPUT")
-            # logger.info(reconstructed_train_samples[0])
-
             test_input_samples, _ = visualizer_test.next()
             reconstructed_test_samples = model(
                 test_input_samples.to(device)
@@ -319,34 +353,41 @@ def main():
                 scale=args.z_std_prior*torch.ones((5, args.latent_dim,))
             )
 
-            # x_params = model.decoder(z.sample().to(device))
-            # x_mean, x_std = x_params
-            # generated_samples = torch.reshape(
-            #     torch.distributions.Normal(*x_params).sample(),
-            #     (5, 28, 28)
-            # ).cpu().numpy()
+            if args.decoder_type == 'bernoulli':
+                x = model.decoder(z.sample().to(device))
+                generated_samples = torch.reshape(x, (5, 28, 28)).cpu().numpy()
 
-            x = model.decoder(z.sample().to(device))
-            generated_samples = torch.reshape(x, (5,28,28)).cpu().numpy()
+                outputs = {
+                    'output': wandb.Histogram(x.cpu().numpy())
+                }
+
+            elif args.decoder_type == 'gaussian':
+                x_params = model.decoder(z.sample().to(device))
+                x_mean, x_std = x_params
+                generated_samples = torch.reshape(
+                    torch.distributions.Normal(*x_params).sample(),
+                    (5, 28, 28)
+                ).cpu().numpy()
+
+                outputs = {
+                    "output_mean": wandb.Histogram(x_mean.cpu().numpy()),
+                    "output_std": wandb.Histogram(x_std.cpu().numpy()),
+                }
 
             wandb.log(
                 {**train_losses,
                  **test_losses,
+                 **outputs,
                  "input_train_samples":
                     [wandb.Image(i) for i in train_input_samples],
                  "reconstructed_train_samples":
-                    [wandb.Image(i) for i in torch.clamp(reconstructed_train_samples,
-                                                         -0.4242,
-                                                         2.7960)],
+                    [wandb.Image(i) for i in reconstructed_train_samples],
                  "input_test_samples":
                     [wandb.Image(i) for i in test_input_samples],
                  "reconstructed_test_samples":
                     [wandb.Image(i) for i in reconstructed_test_samples],
                  "generated_samples":
                     [wandb.Image(i) for i in generated_samples],
-                 # "output_mean": wandb.Histogram(x_mean.cpu().numpy()),
-                 # "output_std": wandb.Histogram(x_std.cpu().numpy()),
-                 "output": wandb.Histogram(x.cpu().numpy()),
                  "epoch": epoch+1
                  })
 
