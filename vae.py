@@ -137,16 +137,15 @@ class VAE(nn.Module):
             )
         elif self.decoder_type == 'gaussian':
             reconstructed_x = torch.reshape(
-                torch.distributions.Normal(**reconstructed_x_params).rsample(),
+                torch.distributions.Normal(*reconstructed_x_params).rsample(),
                 (num_samples, batch_size, 1, 28, 28)
             )
 
         return reconstructed_x
 
     def get_reconstruction_loss(self, reconstructed_x_params, target):
-        samples, batch_size, dim = reconstructed_x_params.shape
-
         if self.decoder_type == 'bernoulli':
+            samples, batch_size, dim = reconstructed_x_params.shape
             assert batch_size, dim == target.shape
             target = target.repeat(samples, 1, 1)
             reconstruction_loss = F.binary_cross_entropy(
@@ -157,6 +156,7 @@ class VAE(nn.Module):
 
         elif self.decoder_type == 'gaussian':
             mu, std = reconstructed_x_params
+            samples, batch_size, dim = mu.shape
             dist = torch.distributions.Normal(mu, std)
             reconstruction_loss = -torch.sum(dist.log_prob(target))
 

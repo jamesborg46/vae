@@ -1,5 +1,5 @@
 python ./vae.py \
-    --name EXP_24 \
+    --name EXP_25 \
     --batch-size 100 \
     --test-batch-size 1000 \
     --epochs 500 \
@@ -11,5 +11,7 @@ python ./vae.py \
     --custom-init \
     --weight-init-std 0.01 \
     --bias-init-std 0.01 \
+    --decoder-type "gaussian" \
+    --sigmoidal-mean \
     --z-std-prior 1 \
 
