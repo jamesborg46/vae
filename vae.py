@@ -58,7 +58,7 @@ class GaussianDecoder(nn.Module):
         mean = self.mean(z)
         if self.sigmoidal_mean:
             mean = torch.sigmoid(mean)
-        log_var = self.log_var(z) - 5
+        log_var = self.log_var(z) - 7
         var = torch.exp(log_var)
         std = torch.sqrt(var)
         return mean, std
